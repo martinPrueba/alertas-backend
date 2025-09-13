@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.kim21.alertas.dto.AlertFilterDTO;
+import com.kim21.alertas.dto.AlertMarcarLeidaDTO;
 
 public interface AlertasService {
 
@@ -35,6 +36,10 @@ public interface AlertasService {
      * se obtienen alertas filtradas por procesos y grupolocal y rango de fechas de initDate a endDate, 
      */
     ResponseEntity<?> getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(String proceso,String activo,OffsetDateTime initDate,OffsetDateTime endDate);
+
+
+    ResponseEntity<?> marcarAlertaComoLeida(AlertMarcarLeidaDTO dto);
+    ResponseEntity<?> reportAlerts();
 
 
 }

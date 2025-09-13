@@ -7,6 +7,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import com.kim21.alertas.dto.AlertFilterDTO;
+import com.kim21.alertas.dto.AlertMarcarLeidaDTO;
 import com.kim21.alertas.model.AlertasModel;
 import com.kim21.alertas.model.VisibleFieldConfigModel;
 import com.kim21.alertas.repository.AlertasRepository;
@@ -16,6 +17,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -38,6 +40,12 @@ public class AlertasServiceImpl implements AlertasService
     @Autowired
     private VisibleFieldConfigRepository visibleFieldConfigRepository;
 
+    private static final Map<String, String> COLUMN_TO_FIELD = Map.of(
+    "fecha_reconocimiento", "fechaReconocimiento",
+    "grupo_local", "grupoLocal"
+    );
+
+
 
     // ALERTAS
     @Override
@@ -49,7 +57,6 @@ public class AlertasServiceImpl implements AlertasService
             List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
 
             List<AlertasModel> alertas = alertasRepository.findAllAlertsByGroupUser(gruposCoincidentesParaBuscar);
-
             // Obtener campos visibles desde la configuración
             List<String> camposVisibles = visibleFieldConfigRepository.findAll()
                 .stream()
@@ -72,8 +79,9 @@ public class AlertasServiceImpl implements AlertasService
                     try 
                     {
 
-                        // Construye el nombre del getter: "get" + nombreCampo con primera letra mayúscula
-                        String getterName = "get" + Character.toUpperCase(campo.charAt(0)) + campo.substring(1);
+                        String fieldName = COLUMN_TO_FIELD.getOrDefault(campo, campo);
+                        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+
 
                         // Obtiene el método de la clase
                         Method getter = AlertasModel.class.getMethod(getterName);
@@ -191,10 +199,6 @@ public class AlertasServiceImpl implements AlertasService
     @Override
     public ResponseEntity<?> getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(String proceso,String activo, OffsetDateTime initDate,OffsetDateTime endDate)
     {
-        if (proceso == null || proceso.isBlank())    
-        {
-            return ResponseEntity.badRequest().body(Map.of("message","El campo 'proceso' es obligatorio"));
-        }
 
         if (initDate == null || endDate == null) 
         {
@@ -203,11 +207,6 @@ public class AlertasServiceImpl implements AlertasService
         if (endDate.isBefore(initDate)) 
         {
             return ResponseEntity.badRequest().body(Map.of("message","La fecha final no puede ser anterior a la inicial"));
-        }
-
-        if (activo == null) 
-        {
-            return ResponseEntity.badRequest().body(Map.of("message","El activo no puede venir vacio ni nulo."));
         }
 
         try 
@@ -219,7 +218,7 @@ public class AlertasServiceImpl implements AlertasService
             }   
 
             //obtener grupos locales que puede tener el usuario
-            List<AlertasModel> alertas = alertasRepository.findByProcesoAndGruposAndDateRange(
+            List<AlertasModel> alertasLeidas = alertasRepository.findByProcesoAndGruposAndDateRangeLeidas(
                 proceso,
                 activo,
                 gruposCoincidentesParaBuscar,
@@ -227,7 +226,11 @@ public class AlertasServiceImpl implements AlertasService
                 endDate
             );
 
-            if (alertas.isEmpty()) 
+
+            //crear map para almacenar alertas y alertasLeidas
+            Map<String,Object> mapGeneral = new HashMap<>();
+
+            if (alertasLeidas.isEmpty()) 
             {
                 return ResponseEntity.status(404).body(Map.of(
                         "message", "No se encontraron alertas para el proceso '" + proceso + 
@@ -236,13 +239,154 @@ public class AlertasServiceImpl implements AlertasService
                 ));
             }
 
-            return ResponseEntity.ok(alertas);
+            mapGeneral.put("alertasLeidas", alertasLeidas);
+
+            //obtener grupos locales que puede tener el usuario
+            List<AlertasModel> alertas = alertasRepository.findByProcesoAndGruposAndDateRange(
+                proceso,
+                activo,
+                gruposCoincidentesParaBuscar,
+                initDate,
+                endDate
+            );
+
+            //logica para filtrar alertas no leidas
+            mapGeneral.put("alertas", alertas);
+
+            return ResponseEntity.ok(mapGeneral);
 
         } 
         catch (Exception e)
         {
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("message","Ha ocurrido un error interno."));
+        }
+    }
+
+    @Override
+    public ResponseEntity<?> marcarAlertaComoLeida(AlertMarcarLeidaDTO dto) 
+    {
+
+        // 1. Validar que el ID de la alerta no sea nulo
+        if (dto.getIdAlerta() == null || dto.getIdAlerta() <= 0) 
+        {
+            return ResponseEntity.badRequest().body(Map.of("message", "El campo 'alertaid' es obligatorio y debe ser mayor a 0"));
+        }
+        
+        try 
+        {
+
+            // 1: verificar que existe la alerta con el id del dto
+            Optional<AlertasModel> alertaOpt = alertasRepository.findById(dto.getIdAlerta());
+            if (alertaOpt.isEmpty()) 
+            {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("message", "No existe una alerta con el ID especificado."));
+            }
+
+            AlertasModel alerta = alertaOpt.get();
+
+            // 3. Verificar si ya fue marcada como leída
+            if (alerta.getFechaReconocimiento() != null) 
+            { 
+                return ResponseEntity.status(HttpStatus.CONFLICT).body( Map.of("message", "La alerta ya fue marcada como leída anteriormente"));
+            }
+
+            // 2: obtener el usuario del sistema
+            String usuario = System.getProperty("user.name");
+            if (usuario == null || usuario.isBlank()) 
+            {
+                usuario = "desconocido";
+            }
+
+            // 3: verificar que el comentario no exceda 80 caracteres
+            if (dto.getComentario() != null && dto.getComentario().length() > 80) 
+            {
+                return ResponseEntity.badRequest() .body(Map.of("message", "El comentario no puede exceder los 80 caracteres."));
+            }
+
+            // 4: calcular tiempo transcurrido entre inicioevento y ahora
+            OffsetDateTime fechaReconocimiento = OffsetDateTime.now();
+            long tiempoReconocimiento = Duration.between(alerta.getInicioevento(), fechaReconocimiento).toMinutes();
+
+            // 5: hacer el update final de la alerta
+            alerta.setUserid(usuario);
+            alerta.setComentario(dto.getComentario());
+            alerta.setValida(dto.isValida());
+            alerta.setFechaReconocimiento(fechaReconocimiento);
+            alerta.setTiempoReconocimiento(tiempoReconocimiento);
+
+            alertasRepository.save(alerta);
+
+            return ResponseEntity.ok(Map.of(
+                    "message", "La alerta fue marcada como leída correctamente.",
+                    "alertaid", alerta.getAlertaid(),
+                    "usuario", usuario,
+                    "fecha_reconocimiento", fechaReconocimiento,
+                    "tiempo_reconocimiento_min", tiempoReconocimiento
+            ));
+
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error al marcar la alerta como leída", "details", e.getMessage()));
+        }
+
+    }
+
+    @Override
+    public ResponseEntity<?> reportAlerts() 
+    {
+
+        try 
+        {
+            Map<String, Object> report = new HashMap<>();
+
+            // 1. Cantidad de alertas activas (no leídas)
+            Long cantidadActivas = alertasRepository.countAlertasActivas();
+            report.put("cantidadActivas", cantidadActivas);
+
+            // 2. Cantidad por proceso
+            List<Object[]> porProceso = alertasRepository.countAlertasPorProceso();
+            Map<String, Long> procesoMap = new HashMap<>();
+            for (Object[] row : porProceso) 
+            {
+                String proceso = (String) row[0];
+                Long total = (Long) row[1];
+                procesoMap.put(proceso, total);
+            }
+            report.put("alertasPorProceso", procesoMap);
+
+            // 3. Cantidad por servicio
+            List<Object[]> porServicio = alertasRepository.countAlertasPorServicio();
+            Map<String, Long> servicioMap = new HashMap<>();
+            for (Object[] row : porServicio) 
+            {
+                String servicio = (String) row[0];
+                Long total = (Long) row[1];
+                servicioMap.put(servicio, total);
+            }
+            report.put("alertasPorServicio", servicioMap);
+
+            // 4. Cantidad por criticidad (severidad)
+            List<Object[]> porCriticidad = alertasRepository.countAlertasPorCriticidad();
+            Map<String, Long> criticidadMap = new HashMap<>();
+            for (Object[] row : porCriticidad) 
+            {
+                String criticidad = (String) row[0];
+                Long total = (Long) row[1];
+                criticidadMap.put(criticidad, total);
+            }
+            
+            report.put("alertasPorCriticidad", criticidadMap);
+
+            return ResponseEntity.ok(report);
+
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(Map.of("message", "Error interno al generar el reporte de alertas", "error", e.getMessage()));
         }
     }
 

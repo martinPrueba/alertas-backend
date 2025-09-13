@@ -147,4 +147,8 @@ public class AlertasModel {
 
     @Column(name = "prediccion")
     private String prediccion;
+
+    @Column(name = "tiempo_reconocimiento")
+    private Long tiempoReconocimiento; // minutos de demora
+
 }

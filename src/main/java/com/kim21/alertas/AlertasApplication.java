@@ -9,7 +9,8 @@ public class AlertasApplication {
 	public static void main(String[] args) {
 		SpringApplication.run(AlertasApplication.class, args);
 
-		System.out.println(" OJOOOOOOOOOOOO AUQI " + System.getProperty("java.library.path"));
+		String usuario = System.getProperty("user.name");
+		System.out.println("Usuario actual: " + usuario);
 
 	}
 

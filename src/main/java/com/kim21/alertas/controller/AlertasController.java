@@ -1,6 +1,7 @@
 package com.kim21.alertas.controller;
 
 import com.kim21.alertas.dto.AlertFilterDTO;
+import com.kim21.alertas.dto.AlertMarcarLeidaDTO;
 import com.kim21.alertas.service.AlertasService;
 import lombok.RequiredArgsConstructor;
 
@@ -9,6 +10,9 @@ import java.time.OffsetDateTime;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+
 
 @RestController
 @RequestMapping("/api/alertas")
@@ -40,5 +44,19 @@ public class AlertasController
     {
         return alertasService.getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(proceso,activo, initDate, endDate);
     }
+
+    // Endpoint para marcar alerta como leída
+    @PostMapping("/marcar-leida")
+    public ResponseEntity<?> marcarAlertaComoLeida(@RequestBody AlertMarcarLeidaDTO dto) 
+    {
+        return alertasService.marcarAlertaComoLeida(dto);
+    }
+
+    @GetMapping("/reporte-alertas")
+    public ResponseEntity<?> reportAlerts() 
+    {
+        return alertasService.reportAlerts();
+    }
+    
 
 }
