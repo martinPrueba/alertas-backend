@@ -1,5 +1,7 @@
 package com.kim21.alertas.service;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -8,7 +10,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
 import com.kim21.alertas.dto.ProcessAssociateIconDTO;
+import com.kim21.alertas.model.AlertasModel;
 import com.kim21.alertas.model.ProcessAssociateIconModel;
+import com.kim21.alertas.repository.AlertasRepository;
 import com.kim21.alertas.repository.ProcessAssociateIconRepository;
 
 @Service
@@ -18,6 +22,9 @@ public class ProcessAssociateIconServiceImpl implements ProcessAssociateIconServ
         
     @Autowired
     private ProcessAssociateIconRepository repository;
+
+    @Autowired
+    private AlertasRepository alertasRepository;
 
     @Override
     public ResponseEntity<?> getIconByProceso(String proceso) 
@@ -129,6 +136,26 @@ public class ProcessAssociateIconServiceImpl implements ProcessAssociateIconServ
             return ResponseEntity.status(500) .body(Map.of("error", "Error interno al actualizar el ícono", "details", e.getMessage()));
         }
 
+    }
+
+    @Override
+    public List<ProcessAssociateIconModel> getAllProcesos() 
+    {
+        List<ProcessAssociateIconModel> listaProcesos= new ArrayList<>(repository.findAll());
+        
+        List<AlertasModel> allAlerts = alertasRepository.findAll();
+
+        //verificar si existe en procesos que no esten con su imagen
+        for (AlertasModel alerta : allAlerts) 
+        {
+            if(listaProcesos.contains(alerta.getProceso()))
+            {
+
+            }    
+        }
+
+
+        return repository.findAll();
     }
     
 }

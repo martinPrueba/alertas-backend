@@ -2,23 +2,23 @@ package com.kim21.alertas.service;
 
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.repository.query.Param;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
-import com.kim21.alertas.dto.AlertFilterDTO;
 import com.kim21.alertas.dto.AlertMarcarLeidaDTO;
 import com.kim21.alertas.model.AlertasModel;
+import com.kim21.alertas.model.ProcessAssociateIconModel;
 import com.kim21.alertas.model.VisibleFieldConfigModel;
 import com.kim21.alertas.repository.AlertasRepository;
+import com.kim21.alertas.repository.ProcessAssociateIconRepository;
 import com.kim21.alertas.repository.VisibleFieldConfigRepository;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.time.Duration;
-import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -45,6 +45,8 @@ public class AlertasServiceImpl implements AlertasService
     "grupo_local", "grupoLocal"
     );
 
+    @Autowired
+    private ProcessAssociateIconRepository processAssociateIconRepository;
 
 
     // ALERTAS
@@ -89,6 +91,8 @@ public class AlertasServiceImpl implements AlertasService
                         // Invoca el getter sobre la instancia actual
                         Object valor = getter.invoke(alerta);
 
+
+                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
                         // Añade al map el nombre del campo y el valor
                         visibleData.put(campo, valor);
 
@@ -101,17 +105,31 @@ public class AlertasServiceImpl implements AlertasService
                     }
                 }
 
+
+                //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
+                Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
+                if(!findIconUrl.isPresent())
+                {
+                    //alerta.setIconAssocieteFromProceso("No existe un icono asociado al proceso.");
+                    visibleData.put("IconAssocieteFromProceso", "No existe un icono asociado al proceso.");
+                }
+                else
+                {
+                    //buscar la url asociada al proceso en 
+                    //alerta.setIconAssocieteFromProceso(findIconUrl.get().getIconUrl());
+
+                    visibleData.put("IconAssocieteFromProceso", findIconUrl.get().getIconUrl());
+                }    
+            
+                
+
                 alertasVisiblesNormales.add(visibleData);
             }
 
 
-            //buscar alertas que fecha_reconocimiento no sea null, para obtener las leidas
-            List<AlertasModel> alertasLeidas = alertasRepository.findAllReadAlerts();
-
             Map<String, Object> response = new HashMap<>();
             response.put("alertas", alertasVisiblesNormales); // las visibles
-            response.put("alertasLeidas", alertasLeidas);
-
+            response.put("alertasLeidas", getAlertasLeidas());
 
             resultado.add(response);
 
@@ -217,9 +235,7 @@ public class AlertasServiceImpl implements AlertasService
                 return ResponseEntity.status(404).body(Map.of("message","No existen grupos asociados al usuario en las alertas."));
             }   
 
-            //obtener grupos locales que puede tener el usuario
-            List<AlertasModel> alertasLeidas = alertasRepository.findByProcesoAndGruposAndDateRangeLeidas(
-                proceso,
+            List<Map<String, Object>> alertasLeidas = getAlertasLeidasByFilter(proceso,
                 activo,
                 gruposCoincidentesParaBuscar,
                 initDate,
@@ -242,7 +258,7 @@ public class AlertasServiceImpl implements AlertasService
             mapGeneral.put("alertasLeidas", alertasLeidas);
 
             //obtener grupos locales que puede tener el usuario
-            List<AlertasModel> alertas = alertasRepository.findByProcesoAndGruposAndDateRange(
+            List<Map<String, Object>> alertas = getAlertasByFilter(
                 proceso,
                 activo,
                 gruposCoincidentesParaBuscar,
@@ -250,6 +266,8 @@ public class AlertasServiceImpl implements AlertasService
                 endDate
             );
 
+
+            
             //logica para filtrar alertas no leidas
             mapGeneral.put("alertas", alertas);
 
@@ -387,6 +405,274 @@ public class AlertasServiceImpl implements AlertasService
         {
             e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of("message", "Error interno al generar el reporte de alertas", "error", e.getMessage()));
+        }
+    }
+
+
+
+
+    public List<Map<String, Object>> getAlertasLeidas()
+    {
+
+        try 
+        {
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+
+            List<AlertasModel> alertas = alertasRepository.findAllAlertsByGroupUserLeidas(gruposCoincidentesParaBuscar);
+            // Obtener campos visibles desde la configuración
+            List<String> camposVisibles = visibleFieldConfigRepository.findAll()
+                .stream()
+                .filter(VisibleFieldConfigModel::getVisible) // Solo los que están en true
+                .map(VisibleFieldConfigModel::getFieldName)
+                .collect(Collectors.toList());
+
+            // Convertimos cada alerta a un Map con solo los campos visibles
+            List<Map<String, Object>> resultado = new ArrayList<>();
+
+            List<Map<String, Object>> alertasVisiblesNormales = new ArrayList<>();
+
+            for (AlertasModel alerta : alertas) 
+            {
+
+                Map<String, Object> visibleData = new HashMap<>();
+
+                for (String campo : camposVisibles) 
+                {
+                    try 
+                    {
+
+                        String fieldName = COLUMN_TO_FIELD.getOrDefault(campo, campo);
+                        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+
+
+                        // Obtiene el método de la clase
+                        Method getter = AlertasModel.class.getMethod(getterName);
+
+                        // Invoca el getter sobre la instancia actual
+                        Object valor = getter.invoke(alerta);
+
+
+                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
+                        // Añade al map el nombre del campo y el valor
+                        visibleData.put(campo, valor);
+
+                        //System.out.println(campo + " y el valor: " + valor);
+
+                    } catch (Exception e) 
+                    {
+                        // Log opcional si un campo no se puede acceder
+                        System.err.println("Error accediendo al campo: " + campo + " → " + e.getMessage());
+                    }
+                }
+
+
+
+                //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
+                Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
+                if(!findIconUrl.isPresent())
+                {
+                    visibleData.put("IconAssocieteFromProceso", "No existe un icono asociado al proceso.");
+                }
+                else
+                {
+                    visibleData.put("IconAssocieteFromProceso", findIconUrl.get().getIconUrl());
+                } 
+
+
+
+                alertasVisiblesNormales.add(visibleData);
+            }
+
+            return alertasVisiblesNormales ;
+
+        } 
+        catch (Exception e) 
+        {
+            // TODO: handle exception
+            e.printStackTrace();
+            return Collections.emptyList(); 
+        }
+
+    }
+
+
+    public List<Map<String, Object>> getAlertasLeidasByFilter(String proceso, String activo, List<String> grupos, OffsetDateTime initDate,OffsetDateTime endDate)
+    {
+        try 
+        {
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+
+            List<AlertasModel> alertas = alertasRepository.findByProcesoAndGruposAndDateRangeLeidas
+            (   proceso,
+                activo,
+                gruposCoincidentesParaBuscar,
+                initDate,
+                endDate
+            );
+            
+            // Obtener campos visibles desde la configuración
+            List<String> camposVisibles = visibleFieldConfigRepository.findAll()
+                .stream()
+                .filter(VisibleFieldConfigModel::getVisible) // Solo los que están en true
+                .map(VisibleFieldConfigModel::getFieldName)
+                .collect(Collectors.toList());
+
+            // Convertimos cada alerta a un Map con solo los campos visibles
+            List<Map<String, Object>> resultado = new ArrayList<>();
+
+            List<Map<String, Object>> alertasVisiblesNormales = new ArrayList<>();
+
+            for (AlertasModel alerta : alertas) 
+            {
+
+                Map<String, Object> visibleData = new HashMap<>();
+
+                for (String campo : camposVisibles) 
+                {
+                    try 
+                    {
+
+                        String fieldName = COLUMN_TO_FIELD.getOrDefault(campo, campo);
+                        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+
+
+                        // Obtiene el método de la clase
+                        Method getter = AlertasModel.class.getMethod(getterName);
+
+                        // Invoca el getter sobre la instancia actual
+                        Object valor = getter.invoke(alerta);
+
+
+                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
+                        // Añade al map el nombre del campo y el valor
+                        visibleData.put(campo, valor);
+
+                        //System.out.println(campo + " y el valor: " + valor);
+
+                    } catch (Exception e) 
+                    {
+                        // Log opcional si un campo no se puede acceder
+                        System.err.println("Error accediendo al campo: " + campo + " → " + e.getMessage());
+                    }
+                }
+
+
+
+                //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
+                Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
+                if(!findIconUrl.isPresent())
+                {
+                    visibleData.put("IconAssocieteFromProceso", "No existe un icono asociado al proceso.");
+                }
+                else
+                {
+                    visibleData.put("IconAssocieteFromProceso", findIconUrl.get().getIconUrl());
+                } 
+
+
+
+                alertasVisiblesNormales.add(visibleData);
+            }
+
+            return alertasVisiblesNormales ;
+
+        } 
+        catch (Exception e) 
+        {
+            // TODO: handle exception
+            e.printStackTrace();
+            return Collections.emptyList(); 
+        }
+    }
+
+
+
+    public List<Map<String, Object>> getAlertasByFilter(String proceso, String activo, List<String> grupos, OffsetDateTime initDate,OffsetDateTime endDate)
+    {
+        try 
+        {
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+
+            List<AlertasModel> alertas = alertasRepository.findByProcesoAndGruposAndDateRange
+            (   proceso,
+                activo,
+                gruposCoincidentesParaBuscar,
+                initDate,
+                endDate
+            );
+            
+            // Obtener campos visibles desde la configuración
+            List<String> camposVisibles = visibleFieldConfigRepository.findAll()
+                .stream()
+                .filter(VisibleFieldConfigModel::getVisible) // Solo los que están en true
+                .map(VisibleFieldConfigModel::getFieldName)
+                .collect(Collectors.toList());
+
+            // Convertimos cada alerta a un Map con solo los campos visibles
+            List<Map<String, Object>> resultado = new ArrayList<>();
+
+            List<Map<String, Object>> alertasVisiblesNormales = new ArrayList<>();
+
+            for (AlertasModel alerta : alertas) 
+            {
+
+                Map<String, Object> visibleData = new HashMap<>();
+
+                for (String campo : camposVisibles) 
+                {
+                    try 
+                    {
+
+                        String fieldName = COLUMN_TO_FIELD.getOrDefault(campo, campo);
+                        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+
+
+                        // Obtiene el método de la clase
+                        Method getter = AlertasModel.class.getMethod(getterName);
+
+                        // Invoca el getter sobre la instancia actual
+                        Object valor = getter.invoke(alerta);
+
+
+                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
+                        // Añade al map el nombre del campo y el valor
+                        visibleData.put(campo, valor);
+
+                        //System.out.println(campo + " y el valor: " + valor);
+
+                    } catch (Exception e) 
+                    {
+                        // Log opcional si un campo no se puede acceder
+                        System.err.println("Error accediendo al campo: " + campo + " → " + e.getMessage());
+                    }
+                }
+
+
+
+                //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
+                Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
+                if(!findIconUrl.isPresent())
+                {
+                    visibleData.put("IconAssocieteFromProceso", "No existe un icono asociado al proceso.");
+                }
+                else
+                {
+                    visibleData.put("IconAssocieteFromProceso", findIconUrl.get().getIconUrl());
+                } 
+
+
+
+                alertasVisiblesNormales.add(visibleData);
+            }
+
+            return alertasVisiblesNormales ;
+
+        } 
+        catch (Exception e) 
+        {
+            // TODO: handle exception
+            e.printStackTrace();
+            return Collections.emptyList(); 
         }
     }
 

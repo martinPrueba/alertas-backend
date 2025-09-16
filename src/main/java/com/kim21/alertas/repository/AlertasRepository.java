@@ -22,6 +22,10 @@ public interface AlertasRepository extends JpaRepository<AlertasModel, Integer>
     @Query("SELECT a FROM AlertasModel a WHERE a.grupoLocal IN :grupos AND a.fechaReconocimiento IS NULL")
     List<AlertasModel> findAllAlertsByGroupUser(@Param("grupos") List<String> grupos);
 
+    @Query("SELECT a FROM AlertasModel a WHERE a.grupoLocal IN :grupos AND a.fechaReconocimiento IS NOT NULL")
+    List<AlertasModel> findAllAlertsByGroupUserLeidas(@Param("grupos") List<String> grupos);
+
+
 
         @Query("SELECT a FROM AlertasModel a " +
         "WHERE (:proceso IS NULL OR a.proceso = :proceso) " +
