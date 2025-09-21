@@ -20,6 +20,7 @@ import java.io.InputStreamReader;
 import java.lang.reflect.Method;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -36,18 +37,20 @@ public class AlertasServiceImpl implements AlertasService
 
     @Autowired
     private AlertasRepository alertasRepository;
-
     @Autowired
     private VisibleFieldConfigRepository visibleFieldConfigRepository;
 
     private static final Map<String, String> COLUMN_TO_FIELD = Map.of(
     "fecha_reconocimiento", "fechaReconocimiento",
+    "tiempo_reconocimiento", "tiempoReconocimiento",
     "grupo_local", "grupoLocal"
     );
 
     @Autowired
     private ProcessAssociateIconRepository processAssociateIconRepository;
 
+    // 👉 Define el formato
+    private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     // ALERTAS
     @Override
@@ -90,7 +93,6 @@ public class AlertasServiceImpl implements AlertasService
 
                         // Invoca el getter sobre la instancia actual
                         Object valor = getter.invoke(alerta);
-
 
                         System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
                         // Añade al map el nombre del campo y el valor
@@ -144,10 +146,105 @@ public class AlertasServiceImpl implements AlertasService
     }
 
     @Override
-    public ResponseEntity<?> findAlertaById(Integer id) {
-        Optional<AlertasModel> alerta = alertasRepository.findById(id);
-        return alerta.map(ResponseEntity::ok)
-                     .orElse(ResponseEntity.notFound().build());
+    public ResponseEntity<?> findAlertaById(Integer id) 
+    {
+        try 
+        {
+            List<AlertasModel> alertas = alertasRepository.findAllByAlertaid(id);
+
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+
+            // Obtener campos visibles desde la configuración
+            List<String> camposVisibles = visibleFieldConfigRepository.findAll()
+                .stream()
+                .filter(VisibleFieldConfigModel::getVisible) // Solo los que están en true
+                .map(VisibleFieldConfigModel::getFieldName)
+                .collect(Collectors.toList());
+
+            // Convertimos cada alerta a un Map con solo los campos visibles
+            List<Map<String, Object>> resultado = new ArrayList<>();
+
+            List<Map<String, Object>> alertasVisiblesNormales = new ArrayList<>();
+
+            for (AlertasModel alerta : alertas) 
+            {
+
+                Map<String, Object> visibleData = new HashMap<>();
+
+                for (String campo : camposVisibles) 
+                {
+                    try 
+                    {
+
+                        String fieldName = COLUMN_TO_FIELD.getOrDefault(campo, campo);
+                        String getterName = "get" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+
+
+                        // Obtiene el método de la clase
+                        Method getter = AlertasModel.class.getMethod(getterName);
+
+                        // Invoca el getter sobre la instancia actual
+                        Object valor = getter.invoke(alerta);
+
+                        // 👀 Sanitizar fecha_reconocimiento
+                        if ("fecha_reconocimiento".equalsIgnoreCase(campo) && valor != null) 
+                        {
+                            OffsetDateTime fecha = (OffsetDateTime) valor;
+                            valor = fecha.format(FORMATTER);
+                        }
+
+                        // 👀 Sanitizar fecha_reconocimiento
+                        if ("tiempo_reconocimiento".equalsIgnoreCase(campo) && valor != null) 
+                        {
+                            
+                            valor = valor + " Minutos";
+                        }
+
+                        // Añade al map el nombre del campo y el valor
+                        visibleData.put(campo, valor);
+
+                        //System.out.println(campo + " y el valor: " + valor);
+
+                    } catch (Exception e) 
+                    {
+                        // Log opcional si un campo no se puede acceder
+                        System.err.println("Error accediendo al campo: " + campo + " → " + e.getMessage());
+                    }
+                }
+
+
+                //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
+                Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
+                if(!findIconUrl.isPresent())
+                {
+                    //alerta.setIconAssocieteFromProceso("No existe un icono asociado al proceso.");
+                    visibleData.put("IconAssocieteFromProceso", "No existe un icono asociado al proceso.");
+                }
+                else
+                {
+                    //buscar la url asociada al proceso en 
+                    //alerta.setIconAssocieteFromProceso(findIconUrl.get().getIconUrl());
+
+                    visibleData.put("IconAssocieteFromProceso", findIconUrl.get().getIconUrl());
+                }    
+            
+                
+
+                alertasVisiblesNormales.add(visibleData);
+            }
+
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("alertas", alertasVisiblesNormales); // las visibles
+            resultado.add(response);
+
+            return ResponseEntity.ok(resultado);
+
+        } 
+        catch (Exception e) 
+        {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("error", "Error al obtener alertas filtradas", "details", e.getMessage()));
+        }
     }
 
     @Override
@@ -218,14 +315,22 @@ public class AlertasServiceImpl implements AlertasService
     public ResponseEntity<?> getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(String proceso,String activo, OffsetDateTime initDate,OffsetDateTime endDate)
     {
 
-        if (initDate == null || endDate == null) 
-        {
-            return ResponseEntity.badRequest().body(Map.of("message","Debe enviar fechas válidas (initDate y endDate)"));
-        }
-        if (endDate.isBefore(initDate)) 
-        {
-            return ResponseEntity.badRequest().body(Map.of("message","La fecha final no puede ser anterior a la inicial"));
-        }
+    // 1) Ambas fechas son obligatorias
+    if (initDate == null || endDate == null) 
+    {
+        return ResponseEntity
+            .badRequest()
+            .body(Map.of("message", "Debes enviar ambas fechas: fecha inicio y fecha fin."));
+    }
+
+    // 2) Coherencia de rango
+    if (endDate.isBefore(initDate)) 
+    {
+        return ResponseEntity
+            .badRequest()
+            .body(Map.of("message", "La fecha fin no puede ser anterior a la inicial."));
+    }
+
 
         try 
         {
@@ -245,15 +350,6 @@ public class AlertasServiceImpl implements AlertasService
 
             //crear map para almacenar alertas y alertasLeidas
             Map<String,Object> mapGeneral = new HashMap<>();
-
-            if (alertasLeidas.isEmpty()) 
-            {
-                return ResponseEntity.status(404).body(Map.of(
-                        "message", "No se encontraron alertas para el proceso '" + proceso + 
-                                "', activo '" + activo + 
-                                "' en los grupos del usuario, dentro del rango de fechas especificado."
-                ));
-            }
 
             mapGeneral.put("alertasLeidas", alertasLeidas);
 
@@ -370,6 +466,11 @@ public class AlertasServiceImpl implements AlertasService
             for (Object[] row : porProceso) 
             {
                 String proceso = (String) row[0];
+                if(proceso == null )
+                {
+                    proceso = "NULO";
+                }
+                
                 Long total = (Long) row[1];
                 procesoMap.put(proceso, total);
             }
@@ -381,6 +482,11 @@ public class AlertasServiceImpl implements AlertasService
             for (Object[] row : porServicio) 
             {
                 String servicio = (String) row[0];
+                if(servicio == null )
+                {
+                    servicio = "NULO";
+                }
+
                 Long total = (Long) row[1];
                 servicioMap.put(servicio, total);
             }
@@ -392,6 +498,11 @@ public class AlertasServiceImpl implements AlertasService
             for (Object[] row : porCriticidad) 
             {
                 String criticidad = (String) row[0];
+                if(criticidad == null )
+                {
+                    criticidad = "NULO";
+                }
+
                 Long total = (Long) row[1];
                 criticidadMap.put(criticidad, total);
             }
@@ -451,8 +562,13 @@ public class AlertasServiceImpl implements AlertasService
                         // Invoca el getter sobre la instancia actual
                         Object valor = getter.invoke(alerta);
 
+                        // 👀 Sanitizar fecha_reconocimiento
+                        if ("fecha_reconocimiento".equalsIgnoreCase(campo) && valor != null) 
+                        {
+                            OffsetDateTime fecha = (OffsetDateTime) valor;
+                            valor = fecha.format(FORMATTER);
+                        }
 
-                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
                         // Añade al map el nombre del campo y el valor
                         visibleData.put(campo, valor);
 
@@ -542,8 +658,13 @@ public class AlertasServiceImpl implements AlertasService
                         // Invoca el getter sobre la instancia actual
                         Object valor = getter.invoke(alerta);
 
+                        // 👀 Sanitizar fecha_reconocimiento
+                        if ("fecha_reconocimiento".equalsIgnoreCase(campo) && valor != null) 
+                        {
+                            OffsetDateTime fecha = (OffsetDateTime) valor;
+                            valor = fecha.format(FORMATTER);
+                        }
 
-                        System.out.println("CAMPO: " + campo + "  VALOR: " + valor );
                         // Añade al map el nombre del campo y el valor
                         visibleData.put(campo, valor);
 
@@ -674,6 +795,61 @@ public class AlertasServiceImpl implements AlertasService
             e.printStackTrace();
             return Collections.emptyList(); 
         }
+    }
+
+    @Override
+    public ResponseEntity<?> getProcesos() 
+    {       
+        try 
+        {
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+            if(gruposCoincidentesParaBuscar.isEmpty())
+            {
+                return ResponseEntity.status(404).body(Map.of("message","No existen grupos asociados al usuario."));
+            }
+            
+            List<String> procesos = alertasRepository.findDistinctProcesosByGrupoLocal(gruposCoincidentesParaBuscar);
+
+            if(procesos.isEmpty())
+            {
+                return ResponseEntity.status(404).body(Map.of("message","No hay procesos asociados al usuario."));
+            }
+
+            return ResponseEntity.ok(procesos);
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+            return ResponseEntity.status(404).body(Map.of("error","Ha ocurrido un error interno"));
+        }
+
+    }
+
+    @Override
+    public ResponseEntity<?> getActivos() 
+    {
+        try 
+        {
+            List<String> gruposCoincidentesParaBuscar =  obtenerGruposCoincidentesConAlertas();
+            if(gruposCoincidentesParaBuscar.isEmpty())
+            {
+                return ResponseEntity.status(404).body(Map.of("message","No existen grupos asociados al usuario."));
+            }
+
+            List<String> activos = alertasRepository.findAllDistintActivosAndGrupoLocal(gruposCoincidentesParaBuscar);
+
+            if(activos.isEmpty())
+            {
+                return ResponseEntity.status(404).body(Map.of("message","No hay activos asociados al usuario."));
+            }
+            return ResponseEntity.ok(activos);
+        } 
+        catch (Exception e) 
+        {
+            e.printStackTrace();
+            return ResponseEntity.status(404).body(Map.of("error","Ha ocurrido un error interno"));
+        }
+
     }
 
 

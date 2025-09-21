@@ -47,8 +47,7 @@ public class ProcessAssociateIconController
     {
         try 
         {
-            List<ProcessAssociateIconModel> procesos = processAssociateIconService.getAllProcesos();
-            return ResponseEntity.ok(procesos);
+            return processAssociateIconService.getAllProcesos();
         } 
         catch (Exception e) 
         {

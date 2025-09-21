@@ -12,5 +12,5 @@ public interface ProcessAssociateIconService
     ResponseEntity<?> getIconByProceso(String proceso);
     ResponseEntity<?> createProcessIcon(ProcessAssociateIconDTO dto);
     ResponseEntity<?> updateIconByProceso(ProcessAssociateIconDTO dto);
-    List<ProcessAssociateIconModel> getAllProcesos();
+    ResponseEntity<?> getAllProcesos();
 }

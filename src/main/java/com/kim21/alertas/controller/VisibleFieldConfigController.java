@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 import com.kim21.alertas.model.VisibleFieldConfigModel;
 import com.kim21.alertas.repository.VisibleFieldConfigRepository;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +24,29 @@ public class VisibleFieldConfigController
     @GetMapping("/get-all")
     public ResponseEntity<?> getAllVisibleFields() 
     {
-        return ResponseEntity.ok(repository.findAll());
+        try 
+        {
+            Map<String,Boolean> map = new HashMap<>();
+
+            for (VisibleFieldConfigModel visibleField : repository.findAll()) 
+            {
+                if(!visibleField.getFieldName().equals("alertaid") && !visibleField.getFieldName().equals("gpsx") && !visibleField.getFieldName().equals("gpsy"))
+                {
+                    if(visibleField.getFieldName() != null)
+                    {
+                        map.put(visibleField.getFieldName(), visibleField.getVisible());
+                    }
+                }
+            }
+
+            return ResponseEntity.ok(map);
+
+        } 
+        catch (Exception e) 
+        {
+            // TODO: handle exception
+            return ResponseEntity.status(500).body(Map.of("error","Ha ocurrido un error interno."));
+        }
     }
 
     @PutMapping("/update-all")

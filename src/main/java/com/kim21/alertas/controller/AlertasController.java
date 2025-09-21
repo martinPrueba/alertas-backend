@@ -2,16 +2,16 @@ package com.kim21.alertas.controller;
 
 import com.kim21.alertas.dto.AlertFilterDTO;
 import com.kim21.alertas.dto.AlertMarcarLeidaDTO;
+import com.kim21.alertas.service.AlertaConfigServiceImpl;
 import com.kim21.alertas.service.AlertasService;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 
 
 @RestController
@@ -21,11 +21,13 @@ public class AlertasController
 {
 
     private final AlertasService alertasService;
+          private final AlertaConfigServiceImpl alertaConfigServiceImpl;
+
 
     @GetMapping("/get-all-alerts")
     public ResponseEntity<?> getAllAlertas() 
     {
-        return ResponseEntity.ok(alertasService.findAllAlertas());
+        return alertasService.findAllAlertas();
     }
 
     @GetMapping("/{id}")
@@ -36,10 +38,10 @@ public class AlertasController
 
     @GetMapping("/filter")
     public ResponseEntity<?> getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(
-            @RequestParam String proceso,
-            @RequestParam String activo,
-            @RequestParam OffsetDateTime initDate,
-            @RequestParam OffsetDateTime endDate
+            @RequestParam (required = false) String proceso,
+            @RequestParam (required = false) String activo,
+            @RequestParam (required = false) OffsetDateTime initDate,
+            @RequestParam (required = false) OffsetDateTime endDate
     ) 
     {
         return alertasService.getAlertsByProcesoAndGrupoLocalAndInitAndEndDate(proceso,activo, initDate, endDate);
@@ -57,6 +59,31 @@ public class AlertasController
     {
         return alertasService.reportAlerts();
     }
+
+    @GetMapping("/get-procesos")
+    public ResponseEntity<?> getProcesos() 
+    {
+        return alertasService.getProcesos();
+    }
     
+    @GetMapping("/get-activos")
+    public ResponseEntity<?> getActivos() 
+    {
+        return alertasService.getActivos();
+    }
+
+
+    @GetMapping("get/refresh-interval")
+    public ResponseEntity<?> getInterval() 
+    {
+        return alertaConfigServiceImpl.getRefreshSeconds();
+    }
+
+    @PutMapping("post/refresh-interval")
+    public ResponseEntity<?> updateInterval(@RequestBody Map<String, Integer> body) 
+    {
+        Integer seconds = body.get("seconds");
+        return alertaConfigServiceImpl.setRefreshSeconds(seconds);
+    }
 
 }

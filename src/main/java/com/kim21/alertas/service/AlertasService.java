@@ -40,6 +40,8 @@ public interface AlertasService {
 
     ResponseEntity<?> marcarAlertaComoLeida(AlertMarcarLeidaDTO dto);
     ResponseEntity<?> reportAlerts();
+    ResponseEntity<?> getProcesos();
+    ResponseEntity<?> getActivos();
 
 
 }

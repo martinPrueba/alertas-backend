@@ -82,5 +82,13 @@ public interface AlertasRepository extends JpaRepository<AlertasModel, Integer>
     @Query("SELECT a.severidad, COUNT(a) FROM AlertasModel a GROUP BY a.severidad")
     List<Object[]> countAlertasPorCriticidad();
     
+    @Query("SELECT DISTINCT a.proceso FROM AlertasModel a WHERE a.grupoLocal IN :grupoLocal AND a.proceso IS NOT NULL")
+    List<String> findDistinctProcesosByGrupoLocal(List<String> grupoLocal);
+
+    @Query("SELECT DISTINCT a.nombreActivo FROM AlertasModel a WHERE a.grupoLocal IN :grupoLocal AND a.nombreActivo IS NOT NULL")
+    List<String> findAllDistintActivosAndGrupoLocal(List<String> grupoLocal);
+
+    List<AlertasModel> findAllByAlertaid(Integer alertaId);
+
 
 }

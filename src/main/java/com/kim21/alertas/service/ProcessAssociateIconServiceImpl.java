@@ -1,6 +1,7 @@
 package com.kim21.alertas.service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -139,23 +140,48 @@ public class ProcessAssociateIconServiceImpl implements ProcessAssociateIconServ
     }
 
     @Override
-    public List<ProcessAssociateIconModel> getAllProcesos() 
+    public ResponseEntity<?> getAllProcesos() 
     {
         List<ProcessAssociateIconModel> listaProcesos= new ArrayList<>(repository.findAll());
         
         List<AlertasModel> allAlerts = alertasRepository.findAll();
 
-        //verificar si existe en procesos que no esten con su imagen
-        for (AlertasModel alerta : allAlerts) 
-        {
-            if(listaProcesos.contains(alerta.getProceso()))
-            {
+        Map<String,String> returnMap = new HashMap<>();
+        
 
-            }    
+        for (ProcessAssociateIconModel processAsocciete : listaProcesos) 
+        {
+            if(processAsocciete.getProceso() != null)
+            {
+                returnMap.put(processAsocciete.getProceso(), processAsocciete.getIconUrl());
+            }
         }
 
 
-        return repository.findAll();
+        // ahora debemos verificar los procesos que tengamos en alertas que no existan en returnMap para asociarlos
+
+            for (AlertasModel alertasModel : allAlerts) 
+            {
+                if(alertasModel.getProceso() != null)
+                {
+                    if(!returnMap.containsKey(alertasModel.getProceso()))
+                    {
+                        //verificar si se encuentra en la tabla de ProccessAssocieteIcon para agregarlo
+                        Optional<ProcessAssociateIconModel> verify = repository.findByProceso(alertasModel.getProceso());
+                        if(verify.isEmpty())
+                        {
+                            ProcessAssociateIconModel entity = ProcessAssociateIconModel.builder()
+                                .proceso(alertasModel.getProceso())
+                                .iconUrl("")
+                                .build();
+                            repository.save(entity);
+                        }
+                        returnMap.put(alertasModel.getProceso(), "null");
+                    }
+                }
+            }
+        
+        return ResponseEntity.ok(returnMap);
     }
     
 }
