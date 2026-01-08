@@ -6,6 +6,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.nio.charset.Charset;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -19,12 +20,13 @@ public class UsuarioController
         try 
         {
             // Ejecuta el comando para obtener los grupos
-            ProcessBuilder builder = new ProcessBuilder("cmd.exe", "/c", "whoami /groups");
+            ProcessBuilder builder = new ProcessBuilder("C:\\Windows\\System32\\cmd.exe", "/c", "whoami /groups");
             builder.redirectErrorStream(true);
             Process process = builder.start();
 
             // Captura la salida
-            List<String> grupos = new BufferedReader(new InputStreamReader(process.getInputStream()))
+            List<String> grupos = new BufferedReader(new BufferedReader(new InputStreamReader(process.getInputStream(), Charset.forName("Cp1252")))
+)
                     .lines()
                     .collect(Collectors.toList());
 

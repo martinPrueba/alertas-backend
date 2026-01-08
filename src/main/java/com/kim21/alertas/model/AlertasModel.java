@@ -88,7 +88,6 @@ public class AlertasModel {
     @Column(name = "estado")
     private String estado;
 
-    @Lob
     @Column(name = "resumen")
     private String resumen;
 
@@ -125,7 +124,6 @@ public class AlertasModel {
     @Column(name = "userid")
     private String userid;
 
-    @Lob
     @Column(name = "comentario")
     private String comentario;
 

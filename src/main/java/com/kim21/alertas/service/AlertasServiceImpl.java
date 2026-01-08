@@ -212,7 +212,6 @@ public class AlertasServiceImpl implements AlertasService
                     }
                 }
 
-
                 //agregamos campo de iconAssocieteFromProceso en ProcessAssociateIconModel
                 Optional<ProcessAssociateIconModel> findIconUrl = processAssociateIconRepository.findByProceso(alerta.getProceso());
                 if(!findIconUrl.isPresent())
@@ -252,12 +251,15 @@ public class AlertasServiceImpl implements AlertasService
     {
         List<String> grupos = new ArrayList<>();
 
-        ProcessBuilder pb = new ProcessBuilder("cmd.exe", "/c", "whoami /groups");
+        ProcessBuilder pb = new ProcessBuilder(
+            "C:\\Windows\\System32\\whoami.exe", "/groups"
+        );
         pb.redirectErrorStream(true);
         Process process = pb.start();
 
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) 
         {
+            
             String linea;
             while ((linea = reader.readLine()) != null) 
             {
